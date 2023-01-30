@@ -7,11 +7,11 @@
 # toolchain build order: linux-api-headers->glibc->binutils->gcc->glibc->binutils->gcc
 # NOTE: libtool requires rebuilt with each new gcc version
 
-pkgname=(gcc gcc-libs lib32-gcc-libs gcc-fortran gcc-objc gcc-ada gcc-go gcc-d libgccjit)
-pkgver=11.2.0
+pkgname=(gcc gcc-libs lib32-gcc-libs gcc-fortran gcc-objc gcc-ada gcc-go gcc-d lto-dump libgccjit)
+pkgver=12.2.1
 _majorver=${pkgver%%.*}
-_islver=0.24
-pkgrel=4
+_commit=eec3a65ed638a1c58fa08ddf508d2d60b64d311d
+pkgrel=1
 pkgdesc='The GNU Compiler Collection'
 arch=(x86_64)
 license=(GPL3 LGPL FDL custom)
@@ -20,12 +20,12 @@ makedepends=(
   binutils
   doxygen
   gcc-ada
+  gcc-d
   git
   lib32-glibc
   lib32-gcc-libs
   libisl
   libmpc
-  libxcrypt
   python
   zstd
 )
@@ -36,24 +36,19 @@ checkdepends=(
   python-pytest
   tcl
 )
-options=(!emptydirs !lto debug)
+options=(!emptydirs !lto)
 _libdir=usr/lib/gcc/$CHOST/${pkgver%%+*}
-# _commit=6beb39ee6c465c21d0cc547fd66b445100cdcc35
-# source=(git://gcc.gnu.org/git/gcc.git#commit=$_commit
-source=(https://sourceware.org/pub/gcc/releases/gcc-${pkgver}/gcc-${pkgver}.tar.xz{,.sig}
+source=(git+https://sourceware.org/git/gcc.git#commit=${_commit}
         c89 c99
-        gdc_phobos_path.patch
         gcc-ada-repro.patch
 )
 validpgpkeys=(F3691687D867B81B51CE07D9BBE43771487328A9  # bpiotrowski@archlinux.org
               86CFFCA918CF3AF47147588051E8B148A9999C34  # evangelos@foutrelis.com
               13975A70E63C361C73AE69EF6EEB81F8981C74C7  # richard.guenther@gmail.com
               D3A93CAD751C2AF4F8C7AD516C35B99309B5FA62) # Jakub Jelinek <jakub@redhat.com>
-sha256sums=('d08edc536b54c372a1010ff6619dd274c0f1603aa49212ba20f7aa2cda36fa8b'
-            'SKIP'
+sha256sums=('SKIP'
             'de48736f6e4153f03d0a5d38ceb6c6fdb7f054e8f47ddd6af0a3dbf14f27b931'
             '2513c6d9984dd0a2058557bf00f06d8d5181734e41dcfe07be7ed86f2959622a'
-            'c86372c207d174c0918d4aedf1cb79f7fc093649eb1ad8d9450dccc46849d308'
             '1773f5137f08ac1f48f0f7297e324d5d868d55201c03068670ee4602babdef2f')
 
 prepare() {
@@ -66,9 +61,6 @@ prepare() {
   # Arch Linux installs x86_64 libraries /lib
   sed -i '/m64=/s/lib64/lib/' gcc/config/i386/t-linux64
 
-  # D hacks
-  patch -Np1 -i "$srcdir/gdc_phobos_path.patch"
-
   # Reproducible gcc-ada
   patch -Np0 < "$srcdir/gcc-ada-repro.patch"
 
@@ -77,34 +69,36 @@ prepare() {
 }
 
 build() {
-  local _confflags="--prefix=/usr \
-      --libdir=/usr/lib \
-      --libexecdir=/usr/lib \
-      --mandir=/usr/share/man \
-      --infodir=/usr/share/info \
-      --with-bugurl=https://bugs.archlinux.org/ \
-      --with-linker-hash-style=gnu \
-      --with-system-zlib \
-      --enable-__cxa_atexit \
-      --enable-cet=auto \
-      --enable-checking=release \
-      --enable-clocale=gnu \
-      --enable-default-pie \
-      --enable-default-ssp \
-      --enable-gnu-indirect-function \
-      --enable-gnu-unique-object \
-      --enable-linker-build-id \
-      --enable-lto \
-      --enable-multilib \
-      --enable-plugin \
-      --enable-shared \
-      --enable-threads=posix \
-      --disable-libssp \
-      --disable-libstdcxx-pch \
-      --disable-werror \
-      --with-build-config=bootstrap-lto \
-      --enable-link-serialization=1 \
-      gdc_include_dir=/usr/include/dlang/gdc"
+  local _confflags=(
+      --prefix=/usr
+      --libdir=/usr/lib
+      --libexecdir=/usr/lib
+      --mandir=/usr/share/man
+      --infodir=/usr/share/info
+      --with-bugurl=https://bugs.archlinux.org/
+      --with-build-config=bootstrap-lto
+      --with-linker-hash-style=gnu
+      --with-system-zlib
+      --enable-__cxa_atexit
+      --enable-cet=auto
+      --enable-checking=release
+      --enable-clocale=gnu
+      --enable-default-pie
+      --enable-default-ssp
+      --enable-gnu-indirect-function
+      --enable-gnu-unique-object
+      --enable-libstdcxx-backtrace
+      --enable-link-serialization=1
+      --enable-linker-build-id
+      --enable-lto
+      --enable-multilib
+      --enable-plugin
+      --enable-shared
+      --enable-threads=posix
+      --disable-libssp
+      --disable-libstdcxx-pch
+      --disable-werror
+  )
 
   cd gcc-build
 
@@ -117,7 +111,7 @@ build() {
   "$srcdir/gcc/configure" \
     --enable-languages=c,c++,ada,fortran,go,lto,objc,obj-c++,d \
     --enable-bootstrap \
-    $_confflags
+    "${_confflags[@]:?_confflags unset}"
 
   # see https://bugs.archlinux.org/task/71777 for rationale re *FLAGS handling
   make -O STAGE1_CFLAGS="-O2" \
@@ -137,7 +131,7 @@ build() {
     --enable-languages=jit \
     --disable-bootstrap \
     --enable-host-shared \
-    $_confflags
+    "${_confflags[@]:?_confflags unset}"
 
   # see https://bugs.archlinux.org/task/71777 for rationale re *FLAGS handling
   make -O STAGE1_CFLAGS="-O2" \
@@ -152,7 +146,7 @@ build() {
 check() {
   cd gcc-build
 
-  # disable libphobos test to avoid segfaults and other unfunny ways to waste my time
+  # disable libphobos test to avoid segfaults
   sed -i '/maybe-check-target-libphobos \\/d' Makefile
 
   # do not abort on error as some are "expected"
@@ -212,7 +206,7 @@ package_gcc() {
   optdepends=('lib32-gcc-libs: for generating code for 32-bit ABI')
   provides=($pkgname-multilib)
   replaces=($pkgname-multilib)
-  options=(!emptydirs staticlibs debug)
+  options=(!emptydirs staticlibs)
 
   cd gcc-build
 
@@ -261,7 +255,7 @@ package_gcc() {
   make -C $CHOST/32/libsanitizer/asan DESTDIR="$pkgdir" install-nodist_toolexeclibHEADERS
 
   make -C gcc DESTDIR="$pkgdir" install-man install-info
-  rm "$pkgdir"/usr/share/man/man1/{gccgo,gfortran,gdc}.1
+  rm "$pkgdir"/usr/share/man/man1/{gccgo,gfortran,lto-dump,gdc}.1
   rm "$pkgdir"/usr/share/info/{gccgo,gfortran,gnat-style,gnat_rm,gnat_ugn,gdc}.info
 
   make -C libcpp DESTDIR="$pkgdir" install
@@ -269,6 +263,12 @@ package_gcc() {
 
   # many packages expect this symlink
   ln -s gcc "$pkgdir"/usr/bin/cc
+
+  # create cc-rs compatible symlinks
+  # https://github.com/rust-lang/cc-rs/blob/1.0.73/src/lib.rs#L2578-L2581
+  for binary in {c++,g++,gcc,gcc-ar,gcc-nm,gcc-ranlib}; do
+    ln -s /usr/bin/${binary} "${pkgdir}"/usr/bin/x86_64-linux-gnu-${binary}
+  done
 
   # POSIX conformance launcher scripts for c89 and c99
   install -Dm755 "$srcdir/c89" "$pkgdir/usr/bin/c89"
@@ -335,7 +335,7 @@ package_gcc-ada() {
   depends=("gcc=$pkgver-$pkgrel" libisl.so)
   provides=($pkgname-multilib)
   replaces=($pkgname-multilib)
-  options=(!emptydirs staticlibs debug)
+  options=(!emptydirs staticlibs)
 
   cd gcc-build/gcc
   make DESTDIR="$pkgdir" ada.install-{common,info}
@@ -372,7 +372,7 @@ package_gcc-ada() {
 package_gcc-go() {
   pkgdesc='Go front-end for GCC'
   depends=("gcc=$pkgver-$pkgrel" libisl.so)
-  provides=("go=1.12.2" $pkgname-multilib)
+  provides=("go=1.18" $pkgname-multilib)
   replaces=($pkgname-multilib)
   conflicts=(go)
 
@@ -433,7 +433,7 @@ package_gcc-d() {
   depends=("gcc=$pkgver-$pkgrel" libisl.so)
   provides=(gdc)
   replaces=(gdc)
-  options=(staticlibs debug)
+  options=(staticlibs)
 
   cd gcc-build
   make -C gcc DESTDIR="$pkgdir" d.install-{common,man,info}
@@ -445,8 +445,18 @@ package_gcc-d() {
   rm -f "$pkgdir/usr/lib/"lib{gphobos,gdruntime}.so*
   rm -f "$pkgdir/usr/lib32/"lib{gphobos,gdruntime}.so*
 
-  install -d "$pkgdir"/usr/include/dlang
-  ln -s /"${_libdir}"/include/d "$pkgdir"/usr/include/dlang/gdc
+  # Install Runtime Library Exception
+  install -d "$pkgdir/usr/share/licenses/$pkgname/"
+  ln -s /usr/share/licenses/gcc-libs/RUNTIME.LIBRARY.EXCEPTION \
+    "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+package_lto-dump() {
+  pkgdesc="Dump link time optimization object files"
+  depends=("gcc=$pkgver-$pkgrel" libisl.so)
+
+  cd gcc-build
+  make -C gcc DESTDIR="$pkgdir" lto.install-{common,man,info}
 
   # Install Runtime Library Exception
   install -d "$pkgdir/usr/share/licenses/$pkgname/"
